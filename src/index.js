@@ -12,12 +12,12 @@ const server = http.createServer(app);
 // Middleware to parse JSON
 app.use(express.json());
 
+app.use(securityMiddleware());
 // Root GET route
 app.get("/", (req, res) => {
   res.json({ message: "Welcome to the Express server!" });
 });
 
-app.use(securityMiddleware());
 // Use the matches router
 app.use("/matches", matchesRouter);
 

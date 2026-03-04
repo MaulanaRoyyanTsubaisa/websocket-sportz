@@ -47,12 +47,10 @@ export function securityMiddleware() {
         }
         return res.status(403).json({ error: "Forbidden" });
       }
-      next();
+      return next();
     } catch (e) {
-      const decision = await httpArcjet.protect(req);
       console.error("Arcjet error:", e);
       return res.status(500).json({ error: "Internal Server Error" });
     }
-    next();
   };
 }
