@@ -20,25 +20,8 @@ export function attachWebSocketServer(server) {
     maxPayload: 1024 * 1024,
   });
 
-  wss.on("connection", async (socket, req) => {
-    if (wsArcjet) {
-      try {
-        const decision = await wsArcjet.protect(req);
-        if (decision.isDenied()) {
-          const code = decision.reason.isRateLimit() ? 1013 : 1008; // 1008: Policy Violation, 1003: Unsupported Data
-          const reason = decision.reason.isRateLimit()
-            ? "rate limit exceeded"
-            : "Forbidden";
-          socket.close(code, reason);
-          return;
-        }
-      } catch (e) {
-        console.error(" WS error:", e);
-        socket.close(1011, "Internal Server Error"); // 1011: Internal Error
-        return;
-      }
-    }
-
+  // we moved the security check to the HTTP upgrade step below
+  wss.on("connection", (socket, req) => {
     socket.isAlive = true;
 
     socket.on("pong", () => {
@@ -48,6 +31,38 @@ export function attachWebSocketServer(server) {
     sendJson(socket, { type: "welcome" });
 
     socket.on("error", console.error);
+  });
+
+  // attach upgrade handler to validate before handshake
+  server.on("upgrade", async (req, socket, head) => {
+    if (wsArcjet) {
+      try {
+        const decision = await wsArcjet.protect(req);
+        if (decision.isDenied()) {
+          // send simple HTTP error and close raw socket
+          const status = decision.reason.isRateLimit() ? 429 : 403;
+          const message = decision.reason.isRateLimit()
+            ? "Too Many Requests"
+            : "Forbidden";
+          socket.write(
+            `HTTP/1.1 ${status} ${message}\r\n` +
+              "Content-Type: text/plain\r\n" +
+              "Connection: close\r\n\r\n" +
+              message,
+          );
+          socket.destroy();
+          return;
+        }
+      } catch (e) {
+        console.error("WS upgrade error:", e);
+        socket.destroy();
+        return;
+      }
+    }
+
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req);
+    });
   });
 
   const interval = setInterval(() => {
